@@ -1,3 +1,6 @@
+![title-pong-wozniak-jobs-edition-platform-a-vintage](https://github.com/user-attachments/assets/70830e23-a2fa-405b-a4f8-557a03594a05)
+
+
 # Jacob's Pong
 
 **Copyright © Stephane Jacob**  
