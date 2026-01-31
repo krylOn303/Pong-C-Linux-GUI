@@ -23,16 +23,6 @@ A single-player Pong game for Linux GUI, written in C++ with SDL2. All dependenc
 - SDL2 (static)
 - SDL2_mixer (static)
 
-### Build
-```
-make
-```
-
-### Run
-```
-./Jacob's\ Pong
-```
-
 ## Controls
 - Up/Down Arrow: Move paddle
 - Esc: Quit
