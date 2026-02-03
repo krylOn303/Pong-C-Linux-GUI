@@ -14,7 +14,7 @@ all: $(TARGET)
 $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) -o "$@" $^ $(LDFLAGS)
 
-%.o: %.cpp game.h
+%.o: %.cpp game.h font.h
 	$(CXX) $(CXXFLAGS) -c $<
 
 clean:

@@ -5,11 +5,13 @@
  */
 
 #include "game.h"
+#include "font.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <string>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
@@ -18,10 +20,11 @@
 #define BALL_SIZE 20
 #define PADDLE_SPEED 8
 #define BALL_SPEED 7
-#define CPU_SPEED 6
 #define SCORE_LIMIT 10
 
-Game::Game() : window(nullptr), renderer(nullptr), soundPaddle(nullptr), soundScore(nullptr), soundWall(nullptr), running(false), playerScore(0), cpuScore(0), ballVelX(0), ballVelY(0), cpuVelY(0) {
+Game::Game() : window(nullptr), renderer(nullptr), soundPaddle(nullptr), soundScore(nullptr), soundWall(nullptr), running(false),
+               state(MENU), difficulty(MEDIUM), menuSelection(0),
+               playerScore(0), cpuScore(0), ballVelX(0), ballVelY(0), cpuVelY(0) {
     srand((unsigned int)time(nullptr));
 }
 
@@ -86,25 +89,74 @@ void Game::handleEvents() {
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) running = false;
         if (e.type == SDL_KEYDOWN) {
-            if (e.key.keysym.sym == SDLK_ESCAPE) running = false;
+            // Global exit check mainly for menu/game over
+            // In game, ESC could pause or go to menu. Let's say ESC goes to Menu or Exit.
+
+            if (state == MENU) {
+                if (e.key.keysym.sym == SDLK_UP) {
+                    menuSelection--;
+                    if (menuSelection < 0) menuSelection = 2;
+                }
+                if (e.key.keysym.sym == SDLK_DOWN) {
+                    menuSelection++;
+                    if (menuSelection > 2) menuSelection = 0;
+                }
+                if (e.key.keysym.sym == SDLK_RETURN) {
+                    if (menuSelection == 0) { // Start
+                        state = PLAYING;
+                        playerScore = cpuScore = 0;
+                        resetBall(rand()%2);
+                    } else if (menuSelection == 1) { // Difficulty
+                        difficulty = (Difficulty)((difficulty + 1) % 3);
+                    } else if (menuSelection == 2) { // Exit
+                        running = false;
+                    }
+                }
+                if (e.key.keysym.sym == SDLK_ESCAPE) running = false;
+            }
+            else if (state == PLAYING) {
+                if (e.key.keysym.sym == SDLK_p) state = PAUSED;
+                if (e.key.keysym.sym == SDLK_ESCAPE) state = MENU;
+            }
+            else if (state == PAUSED) {
+                if (e.key.keysym.sym == SDLK_p) state = PLAYING;
+                if (e.key.keysym.sym == SDLK_ESCAPE) state = MENU;
+            }
+            else if (state == GAME_OVER) {
+                if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_ESCAPE) {
+                    state = MENU;
+                }
+            }
         }
     }
-    const Uint8* keystate = SDL_GetKeyboardState(NULL);
-    if (keystate[SDL_SCANCODE_UP]) playerPaddle.y -= PADDLE_SPEED;
-    if (keystate[SDL_SCANCODE_DOWN]) playerPaddle.y += PADDLE_SPEED;
-    if (playerPaddle.y < 0) playerPaddle.y = 0;
-    if (playerPaddle.y > WINDOW_HEIGHT - PADDLE_HEIGHT) playerPaddle.y = WINDOW_HEIGHT - PADDLE_HEIGHT;
+
+    if (state == PLAYING) {
+        const Uint8* keystate = SDL_GetKeyboardState(NULL);
+        if (keystate[SDL_SCANCODE_UP]) playerPaddle.y -= PADDLE_SPEED;
+        if (keystate[SDL_SCANCODE_DOWN]) playerPaddle.y += PADDLE_SPEED;
+        if (playerPaddle.y < 0) playerPaddle.y = 0;
+        if (playerPaddle.y > WINDOW_HEIGHT - PADDLE_HEIGHT) playerPaddle.y = WINDOW_HEIGHT - PADDLE_HEIGHT;
+    }
 }
 
 void Game::update() {
+    if (state != PLAYING) return;
+
+    int cpuSpeed = 6;
+    if (difficulty == EASY) cpuSpeed = 4;
+    if (difficulty == MEDIUM) cpuSpeed = 6;
+    if (difficulty == HARD) cpuSpeed = 9;
+
     // CPU AI
-    if (ball.y + BALL_SIZE/2 < cpuPaddle.y + PADDLE_HEIGHT/2) cpuPaddle.y -= CPU_SPEED;
-    else if (ball.y + BALL_SIZE/2 > cpuPaddle.y + PADDLE_HEIGHT/2) cpuPaddle.y += CPU_SPEED;
+    if (ball.y + BALL_SIZE/2 < cpuPaddle.y + PADDLE_HEIGHT/2) cpuPaddle.y -= cpuSpeed;
+    else if (ball.y + BALL_SIZE/2 > cpuPaddle.y + PADDLE_HEIGHT/2) cpuPaddle.y += cpuSpeed;
     if (cpuPaddle.y < 0) cpuPaddle.y = 0;
     if (cpuPaddle.y > WINDOW_HEIGHT - PADDLE_HEIGHT) cpuPaddle.y = WINDOW_HEIGHT - PADDLE_HEIGHT;
+
     // Ball movement
     ball.x += ballVelX;
     ball.y += ballVelY;
+
     // Collisions
     if (ball.y <= 0 || ball.y >= WINDOW_HEIGHT - BALL_SIZE) {
         ballVelY = -ballVelY;
@@ -118,6 +170,7 @@ void Game::update() {
         ballVelX = -abs(ballVelX);
         playSound(0);
     }
+
     // Score
     if (ball.x < 0) {
         cpuScore++;
@@ -129,32 +182,46 @@ void Game::update() {
         playSound(1);
         resetBall(true);
     }
+
     // Win condition
-    if (playerScore >= SCORE_LIMIT || cpuScore >= SCORE_LIMIT) running = false;
+    if (playerScore >= SCORE_LIMIT || cpuScore >= SCORE_LIMIT) {
+        state = GAME_OVER;
+    }
 }
 
 void Game::render() {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    // Draw paddles and ball
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderFillRect(renderer, &playerPaddle);
-    SDL_RenderFillRect(renderer, &cpuPaddle);
-    SDL_RenderFillRect(renderer, &ball);
-    // Draw net
-    for (int y = 0; y < WINDOW_HEIGHT; y += 40) {
-        SDL_Rect net = {WINDOW_WIDTH/2 - 2, y, 4, 20};
-        SDL_RenderFillRect(renderer, &net);
+
+    if (state == MENU) {
+        drawMenu();
+    } else {
+        // Draw paddles and ball
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderFillRect(renderer, &playerPaddle);
+        SDL_RenderFillRect(renderer, &cpuPaddle);
+        SDL_RenderFillRect(renderer, &ball);
+
+        // Draw net
+        for (int y = 0; y < WINDOW_HEIGHT; y += 40) {
+            SDL_Rect net = {WINDOW_WIDTH/2 - 2, y, 4, 20};
+            SDL_RenderFillRect(renderer, &net);
+        }
+
+        // Draw scores
+        std::string pScore = std::to_string(playerScore);
+        std::string cScore = std::to_string(cpuScore);
+        drawText(WINDOW_WIDTH/4, 50, pScore, 5);
+        drawText(3*WINDOW_WIDTH/4, 50, cScore, 5);
+
+        if (state == PAUSED) {
+            drawText(WINDOW_WIDTH/2 - 150, WINDOW_HEIGHT/2, "PAUSED", 5);
+        }
+        if (state == GAME_OVER) {
+            drawGameOver();
+        }
     }
-    // Draw scores (simple rectangles for demo)
-    for (int i = 0; i < playerScore; ++i) {
-        SDL_Rect s = {50 + i*15, 30, 10, 20};
-        SDL_RenderFillRect(renderer, &s);
-    }
-    for (int i = 0; i < cpuScore; ++i) {
-        SDL_Rect s = {WINDOW_WIDTH-60 - i*15, 30, 10, 20};
-        SDL_RenderFillRect(renderer, &s);
-    }
+
     SDL_RenderPresent(renderer);
 }
 
@@ -171,4 +238,55 @@ void Game::playSound(int soundId) {
         case 1: if (soundScore) Mix_PlayChannel(-1, soundScore, 0); break;
         case 2: if (soundWall) Mix_PlayChannel(-1, soundWall, 0); break;
     }
+}
+
+void Game::drawText(int x, int y, std::string text, int scale) {
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    for (char c : text) {
+        int idx = (unsigned char)c;
+        if (idx >= 128) continue;
+        const uint8_t* charData = font[idx];
+
+        // Font is 5 cols wide.
+        for (int col = 0; col < 5; ++col) {
+            for (int row = 0; row < 8; ++row) {
+                if (charData[col] & (1 << row)) {
+                    SDL_Rect rect = {x + col * scale, y + row * scale, scale, scale};
+                    SDL_RenderFillRect(renderer, &rect);
+                }
+            }
+        }
+        x += 6 * scale; // 5 width + 1 spacing
+    }
+}
+
+void Game::drawMenu() {
+    drawText(WINDOW_WIDTH/2 - 180, 100, "JACOB'S PONG", 5);
+
+    std::string startStr = "START GAME";
+    std::string diffStr = "DIFFICULTY: ";
+    if (difficulty == EASY) diffStr += "EASY";
+    else if (difficulty == MEDIUM) diffStr += "MEDIUM";
+    else diffStr += "HARD";
+    std::string exitStr = "EXIT";
+
+    if (menuSelection == 0) startStr = "> " + startStr;
+    else startStr = "  " + startStr;
+
+    if (menuSelection == 1) diffStr = "> " + diffStr;
+    else diffStr = "  " + diffStr;
+
+    if (menuSelection == 2) exitStr = "> " + exitStr;
+    else exitStr = "  " + exitStr;
+
+    drawText(WINDOW_WIDTH/2 - 150, 300, startStr, 3);
+    drawText(WINDOW_WIDTH/2 - 150, 350, diffStr, 3);
+    drawText(WINDOW_WIDTH/2 - 150, 400, exitStr, 3);
+}
+
+void Game::drawGameOver() {
+    std::string resultStr = (playerScore >= SCORE_LIMIT) ? "YOU WIN!" : "YOU LOSE!";
+    drawText(WINDOW_WIDTH/2 - 120, WINDOW_HEIGHT/2 - 50, "GAME OVER", 5);
+    drawText(WINDOW_WIDTH/2 - 100, WINDOW_HEIGHT/2 + 50, resultStr, 3);
+    drawText(WINDOW_WIDTH/2 - 200, WINDOW_HEIGHT/2 + 100, "PRESS ENTER TO RETURN", 2);
 }
